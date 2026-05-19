@@ -1,129 +1,196 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
+import { Button, Card, Header, Save } from './components/common';
+import { FullLabV2 } from './components/FullLabV2';
+import { scenarios, type Scenario, type SaveStatus } from './data/m2Data';
 
 type Step = 'entry' | 'home' | 'select' | 'fullV2' | 'dashboard';
-type FlowStep = 'scenario' | 'choice' | 'reason' | 'surprise' | 'second' | 'output' | 'prompt' | 'promptReview' | 'aiPaste' | 'aiReview' | 'final' | 'saved';
-type SaveStatus = 'idle' | 'draft' | 'saving' | 'saved' | 'failed';
 
-type Participant = { participantId: string; name: string; groupName: string; sessionCode: string; courseId: string };
-type Scenario = { id: string; title: string; summary: string; situation: string; dilemma: string; outputTitle: string; recommendedFull?: boolean; recommendedLite?: boolean };
-type Draft = { firstChoice: '' | 'A' | 'B'; reason: string; opportunities: string[]; risks: string[]; second: '' | 'maintain' | 'adjust' | 'switch'; secondReason: string; outputIds: string[]; prompt: string; promptChecks: string[]; aiAnswer: string; aiChecks: string[]; aiNotes: string; finalPlan: string; checkDate: string };
-type ChoiceOption = { title: string; desc: string; opp: string[]; risk: string[] };
-type AiOutput = { id: string; title: string; desc: string; template: string };
+type Participant = {
+  participantId: string;
+  name: string;
+  groupName: string;
+  sessionCode: string;
+  courseId: string;
+};
 
 const API_URL = import.meta.env.VITE_GOOGLE_SCRIPT_WEBAPP_URL as string | undefined;
 const courseId = 'jongkundang-sales-ai-lab';
-const warning = '고객명, 병원명, 의사명, 내부 전략, 민감한 수치, 승인되지 않은 제품 표현은 입력하지 마세요.';
 
-const flowSteps: FlowStep[] = ['scenario', 'choice', 'reason', 'surprise', 'second', 'output', 'prompt', 'promptReview', 'aiPaste', 'aiReview', 'final', 'saved'];
-const flowLabels: Record<FlowStep, string> = { scenario: '상황 읽기', choice: '딜레마 A/B 선택', reason: '선택 이유·기회·위험', surprise: '돌발상황 3개', second: '2차 선택', output: 'AI 산출물 선택', prompt: '프롬프트 생성', promptReview: '프롬프트 검토·복사', aiPaste: 'AI 결과 붙여넣기', aiReview: 'AI 결과 검토', final: '최종 실행계획', saved: '저장 완료' };
-const emptyDraft: Draft = { firstChoice: '', reason: '', opportunities: [], risks: [], second: '', secondReason: '', outputIds: [], prompt: '', promptChecks: [], aiAnswer: '', aiChecks: [], aiNotes: '', finalPlan: '', checkDate: '다음 주 금요일 오전' };
+function createId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
 
-const scenarios: Scenario[] = [
-  { id: 'M2-1', title: '목표는 올라갔는데 팀원들은 납득하지 못합니다', summary: '목표 상향에 대한 수용성과 실행 행동을 정리합니다.', situation: '본부에서 핵심 제품 목표를 상향 조정했습니다. 팀원들은 현장 상황과 맞지 않는다며 부담을 느낍니다.', dilemma: '목표 긴장감은 유지하면서도 팀원들이 납득할 수 있게 설명해야 합니다.', outputTitle: '팀 미팅 목표 설명 준비' },
-  { id: 'M2-2', title: '활동은 많은데 성과로 연결되지 않습니다', summary: '활동량과 활동의 질을 구분합니다.', situation: '방문 건수와 기록은 충분하지만 성과 전환율은 낮습니다.', dilemma: '활동량을 더 늘릴지, 활동의 질을 점검할지 판단해야 합니다.', outputTitle: '이번 주 성과개선 계획', recommendedLite: true },
-  { id: 'M2-5', title: '성과 개선 면담이 압박처럼 받아들여집니다', summary: '성과 문제와 팀원의 방어감을 함께 다루는 면담 상황입니다.', situation: '성과가 흔들리는 팀원과 면담하려 합니다. 팀원은 면담 일정만 잡혀도 “또 실적 이야기겠네요”라고 반응합니다.', dilemma: '성과 문제는 명확히 다루어야 하지만, 대화 방식이 압박처럼 들리면 팀원은 방어적으로 반응할 수 있습니다.', outputTitle: '성과 1:1 면담 준비', recommendedFull: true },
-];
+function getStored<T>(key: string, fallback: T): T {
+  try {
+    const value = localStorage.getItem(key);
+    return value ? (JSON.parse(value) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
-const dilemma: Record<'A' | 'B', ChoiceOption> = {
-  A: { title: '성과 문제를 명확히 짚고 개선 행동을 요구한다', desc: '성과 기준과 현재 미달 지점을 분명히 확인하고 이번 주 바꿀 행동을 합의합니다.', opp: ['성과 이슈 명확화', '빠른 개선 행동 합의', '책임 기준 강화', '본부 요구 대응 용이'], risk: ['팀원 방어감 증가', '질책으로 해석될 가능성', '관계 위축', '실제 원인 파악 부족'] },
-  B: { title: '팀원의 방어감을 낮추기 위해 먼저 어려움과 맥락을 듣는다', desc: '성과 이야기를 바로 꺼내기보다 최근 활동에서 막힌 지점과 어려움을 먼저 확인합니다.', opp: ['대화 수용성 증가', '실제 원인 파악', '신뢰 유지', '팀원의 자기진단 유도'], risk: ['성과 이슈가 흐려짐', '개선 속도 지연', '책임 기준 약화', '면담이 위로로만 끝날 가능성'] },
-};
-
-const surprises = [
-  { title: '본부의 빠른 개선 요구', desc: '본부에서 이번 주 안에 개선 방향과 다음 행동을 보고해 달라고 요청했습니다.' },
-  { title: '팀원의 방어적 반응', desc: '팀원이 면담 전 “저만 문제라고 보시는 건가요?”라고 말했습니다.' },
-  { title: '활동 데이터 해석 불일치', desc: '방문 건수는 충분하지만 고객 반응과 후속 조치의 질에 대한 해석이 다릅니다.' },
-];
-
-const outputs: AiOutput[] = [
-  { id: 'dialogue', title: '성과 1:1 면담 대화문', desc: '첫 문장, 확인 질문, 개선 행동 합의까지 포함합니다.', template: 'template_m2_5_performance_1on1' },
-  { id: 'questions', title: '성과 원인 확인 질문 리스트', desc: '활동량, 상담 품질, 고객 반응을 확인할 질문을 만듭니다.', template: 'template_question_list' },
-  { id: 'agreement', title: '개선 행동 합의문', desc: '이번 주 행동, 지원 방식, 확인 시점을 정리합니다.', template: 'template_action_agreement' },
-  { id: 'followup', title: '면담 후 follow-up 메시지', desc: '면담 이후 팀원에게 보낼 짧은 정리 메시지를 만듭니다.', template: 'template_followup_message' },
-];
-
-const promptChecks = ['민감정보가 들어가 있지 않다', '1차 선택과 2차 선택이 반영되어 있다', '돌발상황 3개가 반영되어 있다', '선택한 산출물 유형이 맞다'];
-const aiChecks = ['1차 선택과 2차 선택이 반영되어 있다', '돌발상황이 반영되어 있다', '표현이 실제 현장 언어에 가깝다', '실행하기 어렵거나 모호한 부분이 있다', '민감정보나 컴플라이언스 위험이 있다'];
-
-function createId(prefix: string) { return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
-function getStored<T>(key: string, fallback: T): T { try { const value = localStorage.getItem(key); return value ? JSON.parse(value) as T : fallback; } catch { return fallback; } }
-function toggle(list: string[], item: string) { return list.includes(item) ? list.filter((x) => x !== item) : [...list, item]; }
-function toggleMax(list: string[], item: string, max: number) { if (list.includes(item)) return list.filter((x) => x !== item); return list.length >= max ? list : [...list, item]; }
-function outputTitles(ids: string[]) { return ids.map((id) => outputs.find((o) => o.id === id)?.title).filter(Boolean).join(' / '); }
-
-async function api(action: string, payload: unknown) {
+async function callAppsScript(action: string, payload: unknown) {
   if (!API_URL) return { skipped: true };
-  const response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action, payload }) });
+
+  const response = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action, payload }),
+  });
+
   const json = await response.json();
   if (!json.success) throw new Error(json.message || 'API error');
   return json.data;
 }
 
-function buildPrompt(scenario: Scenario, draft: Draft) {
-  const selectedOutputs = draft.outputIds.map((id) => outputs.find((o) => o.id === id)).filter(Boolean) as AiOutput[];
-  const second = draft.second === 'maintain' ? '처음 선택 유지' : draft.second === 'switch' ? '다른 방향으로 전환' : '일부 보완';
-  return `상황:\n${scenario.situation}\n\n딜레마:\nA. ${dilemma.A.title}\n- ${dilemma.A.desc}\n\nB. ${dilemma.B.title}\n- ${dilemma.B.desc}\n\n1차 선택:\n${draft.firstChoice}안\n\n선택 이유:\n${draft.reason}\n\n기회:\n${draft.opportunities.join(', ')}\n\n위험:\n${draft.risks.join(', ')}\n\n돌발상황:\n${surprises.map((x, i) => `${i + 1}. ${x.title}: ${x.desc}`).join('\n')}\n\n2차 선택:\n${second}\n\n2차 선택 이유:\n${draft.secondReason}\n\n요청 산출물:\n${selectedOutputs.map((o) => `- ${o.title}: ${o.desc}`).join('\n')}\n\n역할:\n당신은 제약영업 팀장 리더십 코치입니다.\n\n요청:\n위 판단 흐름을 반영해 선택한 산출물을 작성해 주세요.\n\n조건:\n- ${warning}\n- 사실과 추정을 구분합니다.\n- 팀장이 현장에서 실제로 말할 수 있는 언어로 작성합니다.`;
-}
-
-function validate(step: FlowStep, draft: Draft) {
-  if (step === 'choice' && !draft.firstChoice) return 'A/B 중 하나를 선택해 주세요.';
-  if (step === 'reason' && (!draft.reason || draft.opportunities.length === 0 || draft.risks.length === 0)) return '선택 이유, 기회, 위험을 모두 입력해 주세요.';
-  if (step === 'second' && (!draft.second || !draft.secondReason)) return '2차 선택과 이유를 입력해 주세요.';
-  if (step === 'output' && draft.outputIds.length === 0) return 'AI 산출물을 1개 이상 선택해 주세요.';
-  if (step === 'prompt' && !draft.prompt) return '프롬프트를 생성해 주세요.';
-  if (step === 'promptReview' && draft.promptChecks.length < promptChecks.length) return '프롬프트 검토 항목을 모두 확인해 주세요.';
-  if (step === 'aiPaste' && !draft.aiAnswer) return 'AI 결과를 붙여넣거나 직접 초안을 입력해 주세요.';
-  if (step === 'aiReview' && !draft.aiNotes) return 'AI 결과에서 고칠 부분을 입력해 주세요.';
-  if (step === 'final' && !draft.finalPlan) return '최종 실행계획을 입력해 주세요.';
-  return '';
-}
-
-function Card({ children, className = '' }: { children: ReactNode; className?: string }) { return <div className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>{children}</div>; }
-function Button({ children, onClick, variant = 'primary', disabled = false }: { children: ReactNode; onClick?: () => void; variant?: 'primary' | 'secondary' | 'ghost'; disabled?: boolean }) { const cls = variant === 'primary' ? 'bg-slate-900 text-white' : variant === 'secondary' ? 'border border-slate-300 bg-white text-slate-900' : 'bg-slate-100 text-slate-700'; return <button type="button" disabled={disabled} onClick={onClick} className={`w-full rounded-2xl px-4 py-3 font-bold disabled:opacity-50 ${cls}`}>{children}</button>; }
-function Header({ step, title, subtitle }: { step?: string; title: string; subtitle?: string }) { return <header className="mb-4">{step && <div className="mb-2 inline-flex rounded-full bg-slate-100 px-3 py-1 text-sm font-bold text-slate-600">{step}</div>}<h1 className="text-xl font-extrabold text-slate-950">{title}</h1>{subtitle && <p className="mt-2 text-sm leading-6 text-slate-600">{subtitle}</p>}</header>; }
-function TextArea({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) { return <label className="block"><div className="mb-2 text-sm font-bold">{label}</div><textarea className="min-h-28 w-full rounded-2xl border border-slate-300 px-4 py-3" value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></label>; }
-function Select({ title, selected, onClick, desc }: { title: string; selected: boolean; onClick: () => void; desc?: string }) { return <button type="button" onClick={onClick} className={`w-full rounded-2xl border p-4 text-left font-bold ${selected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white'}`}><div>{title}</div>{desc && <div className={`mt-1 text-sm leading-6 ${selected ? 'text-slate-200' : 'text-slate-600'}`}>{desc}</div>}</button>; }
-function Save({ status }: { status: SaveStatus }) { if (status === 'idle') return null; const msg = status === 'saving' ? '저장 중입니다.' : status === 'saved' ? '저장되었습니다.' : status === 'failed' ? '저장이 지연되고 있습니다.' : '작성 중인 내용이 임시 저장되었습니다.'; return <div className="rounded-2xl bg-slate-100 p-3 text-sm text-slate-700">{msg}</div>; }
-
-function EntryScreen({ participant, setParticipant, onEnter, error }: { participant: Participant; setParticipant: (p: Participant) => void; onEnter: () => void; error: string }) {
-  return <><Header title="종근당 영업팀장 AI 리더십 Lab Journey" subtitle="교육 참여를 위해 정보를 입력해 주세요." /><Card><div className="space-y-3"><input className="w-full rounded-2xl border p-3" placeholder="이름" value={participant.name} onChange={(e) => setParticipant({ ...participant, name: e.target.value })} /><input className="w-full rounded-2xl border p-3" placeholder="조/팀" value={participant.groupName} onChange={(e) => setParticipant({ ...participant, groupName: e.target.value })} /><input className="w-full rounded-2xl border p-3" value={participant.sessionCode} onChange={(e) => setParticipant({ ...participant, sessionCode: e.target.value })} />{error && <div className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}<Button onClick={onEnter}>입장하기</Button></div></Card></>;
+function EntryScreen({ participant, setParticipant, onEnter, error, status }: { participant: Participant; setParticipant: (value: Participant) => void; onEnter: () => void; error: string; status: SaveStatus }) {
+  return (
+    <>
+      <Header title="종근당 영업팀장 AI 리더십 Lab Journey" subtitle="교육 참여를 위해 정보를 입력해 주세요." />
+      <Card>
+        <div className="space-y-3">
+          <input className="w-full rounded-2xl border border-slate-300 p-3" placeholder="이름" value={participant.name} onChange={(event) => setParticipant({ ...participant, name: event.target.value })} />
+          <input className="w-full rounded-2xl border border-slate-300 p-3" placeholder="조/팀" value={participant.groupName} onChange={(event) => setParticipant({ ...participant, groupName: event.target.value })} />
+          <input className="w-full rounded-2xl border border-slate-300 p-3" value={participant.sessionCode} onChange={(event) => setParticipant({ ...participant, sessionCode: event.target.value })} />
+          {error && <div className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+          <Save status={status} />
+          <Button onClick={onEnter}>입장하기</Button>
+        </div>
+      </Card>
+    </>
+  );
 }
 
 function HomeScreen({ participant, onStart, onDashboard }: { participant: Participant; onStart: () => void; onDashboard: () => void }) {
-  return <><Header title={`${participant.name || '참여자'}님, 오늘의 여정입니다`} subtitle="M2-5 Full Lab v2 12단계가 반영되었습니다." /><div className="space-y-3"><Card><h2 className="font-bold">M2 성과관리</h2><p className="mt-2 text-sm text-slate-600">성과 개선 면담 Full Lab v2를 진행합니다.</p><div className="mt-4"><Button onClick={onStart}>M2 Full/Lite 선택하기</Button></div></Card><Button variant="ghost" onClick={onDashboard}>강사용 대시보드</Button></div></>;
+  return (
+    <>
+      <Header title={`${participant.name || '참여자'}님, 오늘의 여정입니다`} subtitle="M2-5 Full Lab v2 12단계가 안정화되었습니다." />
+      <div className="space-y-3">
+        <Card>
+          <h2 className="font-bold">M2 성과관리</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">성과 개선 면담 Full Lab v2를 진행합니다.</p>
+          <div className="mt-4"><Button onClick={onStart}>M2 Full/Lite 선택하기</Button></div>
+        </Card>
+        <Button variant="ghost" onClick={onDashboard}>강사용 대시보드</Button>
+      </div>
+    </>
+  );
 }
 
-function SelectScreen({ selectedFull, selectedLite, setSelectedFull, setSelectedLite, onSave }: { selectedFull: string; selectedLite: string; setSelectedFull: (v: string) => void; setSelectedLite: (v: string) => void; onSave: () => void }) {
-  return <><Header step="M2 Lab 선택" title="성과관리 상황 선택" subtitle="Full Lab과 Lite Lab을 선택합니다." /><div className="space-y-3">{scenarios.map((s) => <Card key={s.id} className={selectedFull === s.id || selectedLite === s.id ? 'ring-1 ring-slate-900' : ''}><h2 className="font-bold">{s.title}</h2><p className="mt-2 text-sm text-slate-600">{s.summary}</p><div className="mt-3 grid grid-cols-2 gap-2"><Button variant={selectedFull === s.id ? 'primary' : 'secondary'} onClick={() => { setSelectedFull(s.id); if (selectedLite === s.id) setSelectedLite(''); }}>Full</Button><Button variant={selectedLite === s.id ? 'primary' : 'secondary'} onClick={() => { if (selectedFull !== s.id) setSelectedLite(s.id); }}>Lite</Button></div></Card>)}</div><div className="sticky bottom-0 -mx-4 mt-6 flex gap-2 bg-white p-4"><Button variant="secondary">홈</Button><Button disabled={!selectedFull || !selectedLite} onClick={onSave}>선택 저장 후 Full Lab 시작</Button></div></>;
+function SelectScreen({ selectedFull, selectedLite, setSelectedFull, setSelectedLite, onSave, onHome }: { selectedFull: string; selectedLite: string; setSelectedFull: (value: string) => void; setSelectedLite: (value: string) => void; onSave: () => void; onHome: () => void }) {
+  return (
+    <>
+      <Header step="M2 Lab 선택" title="성과관리 상황 선택" subtitle="Full Lab과 Lite Lab을 선택합니다." />
+      <div className="space-y-3">
+        {scenarios.map((scenario) => (
+          <Card key={scenario.id} className={selectedFull === scenario.id || selectedLite === scenario.id ? 'ring-1 ring-slate-900' : ''}>
+            <div className="mb-2 flex gap-2 text-xs font-bold">
+              {scenario.recommendedFull && <span className="rounded-full bg-slate-900 px-2 py-1 text-white">추천 Full</span>}
+              {scenario.recommendedLite && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">추천 Lite</span>}
+            </div>
+            <h2 className="font-bold">{scenario.title}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{scenario.summary}</p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Button variant={selectedFull === scenario.id ? 'primary' : 'secondary'} onClick={() => { setSelectedFull(scenario.id); if (selectedLite === scenario.id) setSelectedLite(''); }}>Full</Button>
+              <Button variant={selectedLite === scenario.id ? 'primary' : 'secondary'} onClick={() => { if (selectedFull !== scenario.id) setSelectedLite(scenario.id); }}>Lite</Button>
+            </div>
+          </Card>
+        ))}
+      </div>
+      <div className="sticky bottom-0 -mx-4 mt-6 flex gap-2 bg-white p-4">
+        <Button variant="secondary" onClick={onHome}>홈</Button>
+        <Button disabled={!selectedFull || !selectedLite} onClick={onSave}>선택 저장 후 Full Lab 시작</Button>
+      </div>
+    </>
+  );
 }
-
-function FullFlow({ scenario, draft, setDraft, flow, setFlow, status, setStatus, error, setError, participant, selectedLite, onHome }: { scenario: Scenario; draft: Draft; setDraft: (d: Draft) => void; flow: FlowStep; setFlow: (s: FlowStep) => void; status: SaveStatus; setStatus: (s: SaveStatus) => void; error: string; setError: (e: string) => void; participant: Participant; selectedLite: string; onHome: () => void }) {
-  const flowIndex = flowSteps.indexOf(flow);
-  const selectedOutputs = outputs.filter((o) => draft.outputIds.includes(o.id));
-  function update(next: Partial<Draft>) { setDraft({ ...draft, ...next }); setStatus('draft'); }
-  async function saveFull() { setStatus('saving'); try { await api('saveResponse', { responseId: createId('R'), participantId: participant.participantId, sessionCode: participant.sessionCode, courseId, name: participant.name, groupName: participant.groupName, moduleId: 'M2', moduleTitle: '성과관리', scenarioId: 'M2-5', scenarioTitle: scenario.title, labType: 'full', outputTitle: outputTitles(draft.outputIds) || scenario.outputTitle, coreIssue: scenario.dilemma, firstDecision: `${draft.firstChoice} / ${draft.reason}`, promptText: draft.prompt, aiAnswer: draft.aiAnswer, revisionChecks: draft.aiChecks, revisionNotes: draft.aiNotes, finalOutput: draft.finalPlan, actionText: draft.finalPlan, checkDate: draft.checkDate, dilemmaOptionA: dilemma.A.title, dilemmaOptionB: dilemma.B.title, firstChoice: draft.firstChoice, firstChoiceReason: draft.reason, firstChoiceOpportunity: draft.opportunities.join('; '), firstChoiceRisk: draft.risks.join('; '), surpriseVariables: surprises.map((s) => `${s.title}: ${s.desc}`).join('\n'), secondChoiceType: draft.second, secondChoiceReason: draft.secondReason, selectedOutputType: outputTitles(draft.outputIds), selectedTemplateId: draft.outputIds.join('; '), promptReviewChecks: draft.promptChecks.join('; '), aiReviewChecks: draft.aiChecks.join('; '), aiRevisionNotes: draft.aiNotes, finalActionPlan: draft.finalPlan }); await api('saveProgress', { participantId: participant.participantId, sessionCode: participant.sessionCode, courseId, moduleId: 'M2', moduleTitle: '성과관리', status: 'in_progress', selectedFullScenarioId: 'M2-5', selectedLiteScenarioIds: [selectedLite], completedFullCount: 1, completedLiteCount: 0, requiredFullCount: 1, requiredLiteCount: 1, lastLabType: 'full', lastStep: 'FullV2-saved' }); setStatus('saved'); setFlow('saved'); } catch { setStatus('failed'); setError('저장이 지연되고 있습니다.'); } }
-  function next() { const msg = validate(flow, draft); if (msg) return setError(msg); setError(''); if (flow === 'final') void saveFull(); else setFlow(flowSteps[Math.min(flowIndex + 1, flowSteps.length - 1)]); }
-  return <><Header step={`Full Lab v2 ${flowIndex + 1}/12`} title={flowLabels[flow]} subtitle={scenario.title} /><div className="mb-4 h-2 rounded-full bg-slate-200"><div className="h-full rounded-full bg-slate-900" style={{ width: `${Math.round(((flowIndex + 1) / 12) * 100)}%` }} /></div><div className="space-y-4">{flow === 'scenario' && <><Card><b>핵심 상황</b><p className="mt-2 text-sm leading-6">{scenario.situation}</p></Card><Card><b>팀장 고민</b><p className="mt-2 text-sm leading-6">{scenario.dilemma}</p></Card></>}{flow === 'choice' && <><Select title={`A. ${dilemma.A.title}`} desc={dilemma.A.desc} selected={draft.firstChoice === 'A'} onClick={() => setDraft({ ...emptyDraft, firstChoice: 'A' })} /><Select title={`B. ${dilemma.B.title}`} desc={dilemma.B.desc} selected={draft.firstChoice === 'B'} onClick={() => setDraft({ ...emptyDraft, firstChoice: 'B' })} /></>}{flow === 'reason' && <ReasonStep draft={draft} update={update} />}{flow === 'surprise' && surprises.map((s, i) => <Card key={s.title}><b>돌발 {i + 1}. {s.title}</b><p className="mt-2 text-sm leading-6">{s.desc}</p></Card>)}{flow === 'second' && <><Select title="처음 선택을 유지한다" selected={draft.second === 'maintain'} onClick={() => update({ second: 'maintain' })} /><Select title="일부 보완한다" selected={draft.second === 'adjust'} onClick={() => update({ second: 'adjust' })} /><Select title="다른 방향으로 전환한다" selected={draft.second === 'switch'} onClick={() => update({ second: 'switch' })} /><TextArea label="그 이유와 수정 방향" value={draft.secondReason} onChange={(v) => update({ secondReason: v })} /></>}{flow === 'output' && <><Card className="bg-slate-50"><p className="text-sm">최대 2개까지 선택할 수 있습니다.</p></Card>{outputs.map((o) => <Select key={o.id} title={o.title} desc={o.desc} selected={draft.outputIds.includes(o.id)} onClick={() => update({ outputIds: toggleMax(draft.outputIds, o.id, 2) })} />)}</>}{flow === 'prompt' && <><Button onClick={() => update({ prompt: buildPrompt(scenario, draft) })}>프롬프트 생성</Button><Card><pre className="max-h-72 overflow-auto whitespace-pre-wrap text-xs leading-5">{draft.prompt || buildPrompt(scenario, draft)}</pre></Card></>}{flow === 'promptReview' && <><Card><div className="space-y-2">{promptChecks.map((c) => <Select key={c} title={c} selected={draft.promptChecks.includes(c)} onClick={() => update({ promptChecks: toggle(draft.promptChecks, c) })} />)}</div></Card><Button onClick={async () => { const p = draft.prompt || buildPrompt(scenario, draft); update({ prompt: p }); try { await navigator.clipboard.writeText(p); } catch { /* ignore */ } }}>프롬프트 복사</Button></>}{flow === 'aiPaste' && <TextArea label="AI 결과 붙여넣기 또는 직접 초안" value={draft.aiAnswer} onChange={(v) => update({ aiAnswer: v })} />}{flow === 'aiReview' && <><Card><div className="space-y-2">{aiChecks.map((c) => <Select key={c} title={c} selected={draft.aiChecks.includes(c)} onClick={() => update({ aiChecks: toggle(draft.aiChecks, c) })} />)}</div></Card><TextArea label="내가 최종적으로 고칠 부분" value={draft.aiNotes} onChange={(v) => update({ aiNotes: v })} /></>}{flow === 'final' && <><Card><b>선택 산출물</b><p className="mt-2 text-sm">{selectedOutputs.map((o) => o.title).join(' / ')}</p></Card><TextArea label="최종 실행 계획 및 내용" value={draft.finalPlan} onChange={(v) => update({ finalPlan: v })} /><input className="w-full rounded-2xl border p-3" value={draft.checkDate} onChange={(e) => update({ checkDate: e.target.value })} /></>}{flow === 'saved' && <><Card className="bg-emerald-50 text-emerald-900"><b>저장되었습니다.</b><p className="mt-2 text-sm">오늘 남긴 실행안은 시트에서 확인할 수 있습니다.</p></Card><Card><b>최종 실행계획</b><p className="mt-2 whitespace-pre-wrap text-sm">{draft.finalPlan}</p></Card></>}{error && <div className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}<Save status={status} /></div><div className="sticky bottom-0 -mx-4 mt-6 flex gap-2 bg-white p-4"><Button variant="secondary" onClick={() => { if (flowIndex === 0) onHome(); else setFlow(flowSteps[flowIndex - 1]); }}>이전</Button>{flow === 'saved' ? <Button onClick={onHome}>모듈 홈</Button> : <Button onClick={next}>{flow === 'final' ? '저장' : '다음'}</Button>}</div></>;
-}
-
-function ReasonStep({ draft, update }: { draft: Draft; update: (next: Partial<Draft>) => void }) { const opt = draft.firstChoice === 'A' ? dilemma.A : dilemma.B; return <><TextArea label="선택한 이유" value={draft.reason} onChange={(v) => update({ reason: v })} /><Card><b>기회</b><div className="mt-3 space-y-2">{opt.opp.map((x) => <Select key={x} title={x} selected={draft.opportunities.includes(x)} onClick={() => update({ opportunities: toggle(draft.opportunities, x) })} />)}</div></Card><Card><b>위험</b><div className="mt-3 space-y-2">{opt.risk.map((x) => <Select key={x} title={x} selected={draft.risks.includes(x)} onClick={() => update({ risks: toggle(draft.risks, x) })} />)}</div></Card></>; }
 
 export default function App() {
   const [step, setStep] = useState<Step>('entry');
   const [participant, setParticipant] = useState<Participant>(() => getStored('p', { participantId: '', name: '', groupName: '', sessionCode: 'JKD-2026-01', courseId }));
   const [selectedFull, setSelectedFull] = useState('M2-5');
   const [selectedLite, setSelectedLite] = useState('M2-2');
-  const [flow, setFlow] = useState<FlowStep>('scenario');
-  const [draft, setDraft] = useState<Draft>(() => getStored('m25draft', emptyDraft));
   const [status, setStatus] = useState<SaveStatus>('idle');
   const [error, setError] = useState('');
   const [dashboard, setDashboard] = useState<unknown>(null);
-  const scenario = scenarios.find((s) => s.id === selectedFull) || scenarios[2];
-  useEffect(() => { localStorage.setItem('p', JSON.stringify(participant)); }, [participant]);
-  useEffect(() => { localStorage.setItem('m25draft', JSON.stringify(draft)); }, [draft]);
-  async function saveParticipant() { if (!participant.name.trim()) return setError('이름을 입력해 주세요.'); const next = { ...participant, participantId: participant.participantId || createId('P') }; setParticipant(next); try { await api('saveParticipant', { ...next, role: 'learner', entryStatus: 'active' }); } catch { /* local fallback */ } setStep('home'); }
-  async function saveSelection() { setStatus('saving'); try { await api('saveProgress', { participantId: participant.participantId, sessionCode: participant.sessionCode, courseId, moduleId: 'M2', moduleTitle: '성과관리', status: 'in_progress', selectedFullScenarioId: selectedFull, selectedLiteScenarioIds: [selectedLite], completedFullCount: 0, completedLiteCount: 0, requiredFullCount: 1, requiredLiteCount: 1 }); setStatus('saved'); setFlow('scenario'); setStep('fullV2'); } catch { setStatus('failed'); } }
-  async function loadDashboard() { try { setDashboard(await api('getDashboardData', { sessionCode: participant.sessionCode })); } catch (e) { setDashboard({ error: e instanceof Error ? e.message : '조회 오류' }); } }
-  if (step === 'dashboard') return <main className="mx-auto min-h-screen max-w-5xl px-4 py-8"><Header step="Instructor" title="강사용 대시보드" subtitle="수업 운영과 토의 지원 화면입니다." /><div className="mb-4 flex max-w-xl gap-2"><Button onClick={loadDashboard}>대시보드 조회</Button><Button variant="secondary" onClick={() => setStep('home')}>교육생 화면</Button></div><Card><pre className="max-h-[560px] overflow-auto whitespace-pre-wrap text-xs">{dashboard ? JSON.stringify(dashboard, null, 2) : '아직 조회하지 않았습니다.'}</pre></Card></main>;
-  return <main className="mx-auto min-h-screen max-w-xl px-4 py-8 pb-28">{step === 'entry' && <EntryScreen participant={participant} setParticipant={setParticipant} onEnter={saveParticipant} error={error} />}{step === 'home' && <HomeScreen participant={participant} onStart={() => setStep('select')} onDashboard={() => setStep('dashboard')} />}{step === 'select' && <SelectScreen selectedFull={selectedFull} selectedLite={selectedLite} setSelectedFull={setSelectedFull} setSelectedLite={setSelectedLite} onSave={saveSelection} />}{step === 'fullV2' && <FullFlow scenario={scenario} draft={draft} setDraft={setDraft} flow={flow} setFlow={setFlow} status={status} setStatus={setStatus} error={error} setError={setError} participant={participant} selectedLite={selectedLite} onHome={() => setStep('home')} />}</main>;
+  const scenario: Scenario = scenarios.find((item) => item.id === selectedFull) || scenarios[2];
+
+  useEffect(() => {
+    localStorage.setItem('p', JSON.stringify(participant));
+  }, [participant]);
+
+  async function saveParticipant() {
+    setError('');
+    if (!participant.name.trim()) {
+      setError('이름을 입력해 주세요.');
+      return;
+    }
+
+    const next = { ...participant, participantId: participant.participantId || createId('P'), courseId };
+    setParticipant(next);
+    setStatus('saving');
+
+    try {
+      await callAppsScript('saveParticipant', { ...next, role: 'learner', entryStatus: 'active' });
+      setStatus('saved');
+    } catch {
+      setStatus('failed');
+    }
+
+    setStep('home');
+  }
+
+  async function saveSelection() {
+    setStatus('saving');
+    try {
+      await callAppsScript('saveProgress', {
+        participantId: participant.participantId,
+        sessionCode: participant.sessionCode,
+        courseId,
+        moduleId: 'M2',
+        moduleTitle: '성과관리',
+        status: 'in_progress',
+        selectedFullScenarioId: selectedFull,
+        selectedLiteScenarioIds: [selectedLite],
+        completedFullCount: 0,
+        completedLiteCount: 0,
+        requiredFullCount: 1,
+        requiredLiteCount: 1,
+      });
+      setStatus('saved');
+    } catch {
+      setStatus('failed');
+    }
+    setStep('fullV2');
+  }
+
+  async function loadDashboard() {
+    try {
+      setDashboard(await callAppsScript('getDashboardData', { sessionCode: participant.sessionCode }));
+    } catch (event) {
+      setDashboard({ error: event instanceof Error ? event.message : '조회 오류' });
+    }
+  }
+
+  if (step === 'dashboard') {
+    return (
+      <main className="mx-auto min-h-screen max-w-5xl px-4 py-8">
+        <Header step="Instructor" title="강사용 대시보드" subtitle="수업 운영과 토의 지원 화면입니다." />
+        <div className="mb-4 flex max-w-xl gap-2">
+          <Button onClick={loadDashboard}>대시보드 조회</Button>
+          <Button variant="secondary" onClick={() => setStep('home')}>교육생 화면</Button>
+        </div>
+        <Card><pre className="max-h-[560px] overflow-auto whitespace-pre-wrap text-xs">{dashboard ? JSON.stringify(dashboard, null, 2) : '아직 조회하지 않았습니다.'}</pre></Card>
+      </main>
+    );
+  }
+
+  return (
+    <main className="mx-auto min-h-screen max-w-xl px-4 py-8 pb-28">
+      {step === 'entry' && <EntryScreen participant={participant} setParticipant={setParticipant} onEnter={saveParticipant} error={error} status={status} />}
+      {step === 'home' && <HomeScreen participant={participant} onStart={() => setStep('select')} onDashboard={() => setStep('dashboard')} />}
+      {step === 'select' && <SelectScreen selectedFull={selectedFull} selectedLite={selectedLite} setSelectedFull={setSelectedFull} setSelectedLite={setSelectedLite} onSave={saveSelection} onHome={() => setStep('home')} />}
+      {step === 'fullV2' && <FullLabV2 participant={participant} scenario={scenario} selectedLite={selectedLite} callAppsScript={callAppsScript} onBackToSelection={() => setStep('select')} onComplete={() => setStep('home')} />}
+    </main>
+  );
 }
