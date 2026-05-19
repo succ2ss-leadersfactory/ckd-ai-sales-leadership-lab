@@ -14,6 +14,7 @@ import {
   toggle,
   toggleMax,
   validateFlowStep,
+  type AiOutput,
   type Draft,
   type SaveStatus,
   type Scenario,
@@ -255,7 +256,7 @@ function PromptReviewStep({ scenario, draft, updateDraft }: { scenario: Scenario
   const prompt = draft.prompt || buildPrompt(scenario, draft);
   return <>
     <Card><div className="space-y-2">{promptChecks.map((item) => <Select key={item} title={item} selected={draft.promptChecks.includes(item)} onClick={() => updateDraft({ promptChecks: toggle(draft.promptChecks, item) })} />)}</div></Card>
-    <Button onClick={async () => { updateDraft({ prompt, promptCopied: true } as Partial<Draft>); try { await navigator.clipboard.writeText(prompt); } catch { /* ignore */ } }}>프롬프트 복사</Button>
+    <Button onClick={async () => { updateDraft({ prompt }); try { await navigator.clipboard.writeText(prompt); } catch { /* ignore */ } }}>프롬프트 복사</Button>
   </>;
 }
 
