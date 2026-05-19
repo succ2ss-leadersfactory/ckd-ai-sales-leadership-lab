@@ -57,7 +57,7 @@ function getStoredDraft(scenarioId: string): LiteDraft {
   }
 }
 
-export function LiteLab({ participant, scenario, selectedFull, callAppsScript, onBackToHome, onBackToSelection, onComplete }: LiteLabProps) {
+export function LiteLab({ participant, scenario, callAppsScript, onBackToSelection, onComplete }: LiteLabProps) {
   const [step, setStep] = useState<LiteStep>('scenario');
   const [draft, setDraft] = useState<LiteDraft>(() => getStoredDraft(scenario.id));
   const [status, setStatus] = useState<SaveStatus>('idle');
@@ -161,9 +161,15 @@ export function LiteLab({ participant, scenario, selectedFull, callAppsScript, o
         {status === 'failed' && step === 'action' && <Button variant="secondary" onClick={() => void saveLiteLab()}>다시 저장하기</Button>}
       </div>
 
-      <div className="sticky bottom-0 -mx-4 mt-6 flex gap-2 bg-white p-4">
-        <Button variant="secondary" onClick={step === 'saved' ? onBackToHome : goPrevious}>{step === 'scenario' ? 'Lab 선택' : '이전'}</Button>
-        {step === 'saved' ? <Button onClick={onComplete}>모듈 홈으로</Button> : <Button onClick={goNext}>{step === 'action' ? '간략 저장하기' : '다음'}</Button>}
+      <div className="sticky bottom-0 -mx-4 mt-6 bg-white p-4">
+        {step === 'saved' ? (
+          <Button onClick={onComplete}>모듈 홈으로</Button>
+        ) : (
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={goPrevious}>{step === 'scenario' ? 'Lab 선택' : '이전'}</Button>
+            <Button onClick={goNext}>{step === 'action' ? '간략 저장하기' : '다음'}</Button>
+          </div>
+        )}
       </div>
     </main>
   );
