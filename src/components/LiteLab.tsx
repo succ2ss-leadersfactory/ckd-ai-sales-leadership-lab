@@ -18,6 +18,7 @@ interface LiteLabProps {
   onBackToHome: () => void;
   onBackToSelection: () => void;
   onComplete: () => void;
+  hasNextLite: boolean;
 }
 
 type LiteStep = 'scenario' | 'choice' | 'reason' | 'action' | 'saved';
@@ -107,7 +108,7 @@ ${help?.request || '위 내용을 바탕으로 실행 문장을 더 자연스럽
 - 5줄 이내로 작성해 주세요.`;
 }
 
-export function LiteLab({ participant, scenario, callAppsScript, onBackToSelection, onComplete }: LiteLabProps) {
+export function LiteLab({ participant, scenario, callAppsScript, onBackToSelection, onComplete, hasNextLite }: LiteLabProps) {
   const [step, setStep] = useState<LiteStep>('scenario');
   const [draft, setDraft] = useState<LiteDraft>(() => getStoredDraft(scenario.id));
   const [status, setStatus] = useState<SaveStatus>('idle');
@@ -228,7 +229,7 @@ export function LiteLab({ participant, scenario, callAppsScript, onBackToSelecti
         {step === 'choice' && <ChoiceStep draft={draft} onSelect={(choice) => updateDraft({ choiceCode: choice.code, choice: choice.text })} />}
         {step === 'reason' && <TextArea label="그렇게 판단한 이유" value={draft.reason} onChange={(value) => updateDraft({ reason: value })} placeholder="예: 활동량은 충분하지만 후속 조치 흐름에서 성과 전환이 막히고 있기 때문입니다." />}
         {step === 'action' && <ActionAndMiniAiStep draft={draft} updateDraft={updateDraft} onCopyPrompt={copyLitePrompt} copyMessage={copyMessage} scenario={scenario} />}
-        {step === 'saved' && <SavedStep draft={draft} />}
+        {step === 'saved' && <SavedStep draft={draft} hasNextLite={hasNextLite} />}
 
         {error && <div className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}
         <Save status={status} />
@@ -237,7 +238,7 @@ export function LiteLab({ participant, scenario, callAppsScript, onBackToSelecti
 
       <div className="sticky bottom-0 -mx-4 mt-6 bg-white p-4">
         {step === 'saved' ? (
-          <Button onClick={onComplete}>모듈 홈으로</Button>
+          <Button onClick={onComplete}>{hasNextLite ? '다음 Lite Lab으로' : '모듈 홈으로'}</Button>
         ) : (
           <div className="flex gap-2">
             <Button variant="secondary" onClick={goPrevious}>{step === 'scenario' ? 'Lab 선택' : '이전'}</Button>
@@ -281,10 +282,10 @@ function ActionAndMiniAiStep({ draft, updateDraft, onCopyPrompt, copyMessage, sc
   </>;
 }
 
-function SavedStep({ draft }: { draft: LiteDraft }) {
+function SavedStep({ draft, hasNextLite }: { draft: LiteDraft; hasNextLite: boolean }) {
   const finalSentence = draft.finalSentence.trim() || draft.actionSentence;
   return <>
-    <Card className="bg-emerald-50 text-emerald-900"><b>간략 저장되었습니다.</b><p className="mt-2 text-sm">이 응답은 강의 중 토의 소재와 내 저장 내용 보기에 활용됩니다.</p></Card>
+    <Card className="bg-emerald-50 text-emerald-900"><b>간략 저장되었습니다.</b><p className="mt-2 text-sm">{hasNextLite ? '다음 Lite Lab으로 이어서 진행합니다.' : '이 응답은 강의 중 토의 소재와 내 저장 내용 보기에 활용됩니다.'}</p></Card>
     <Card><b>빠른 판단</b><p className="mt-2 text-sm leading-6">{draft.choice}</p><b className="mt-4 block">한 줄 이유</b><p className="mt-2 text-sm leading-6">{draft.reason}</p><b className="mt-4 block">최종 실행 문장</b><p className="mt-2 text-sm leading-6">{finalSentence}</p></Card>
   </>;
 }
