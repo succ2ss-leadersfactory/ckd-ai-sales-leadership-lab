@@ -30,6 +30,13 @@ export interface Draft {
   checkDate: string;
 }
 
+export interface AiOutput {
+  id: string;
+  title: string;
+  desc: string;
+  template: string;
+}
+
 export const emptyDraft: Draft = {
   firstChoice: '',
   reason: '',
@@ -68,7 +75,7 @@ export const surprises = [
   { title: '활동 데이터 해석 불일치', desc: '방문 건수는 충분하지만 고객 반응과 후속 조치의 질에 대한 해석이 다릅니다.' },
 ];
 
-export const outputs = [
+export const outputs: AiOutput[] = [
   { id: 'dialogue', title: '성과 1:1 면담 대화문', desc: '첫 문장, 확인 질문, 개선 행동 합의까지 포함합니다.', template: 'template_m2_5_performance_1on1' },
   { id: 'questions', title: '성과 원인 확인 질문 리스트', desc: '활동량, 상담 품질, 고객 반응을 확인할 질문을 만듭니다.', template: 'template_question_list' },
   { id: 'agreement', title: '개선 행동 합의문', desc: '이번 주 행동, 지원 방식, 확인 시점을 정리합니다.', template: 'template_action_agreement' },
@@ -77,6 +84,15 @@ export const outputs = [
 
 export const promptChecks = ['민감정보가 들어가 있지 않다', '1차 선택과 2차 선택이 반영되어 있다', '돌발상황 3개가 반영되어 있다', '선택한 산출물 유형이 맞다'];
 export const aiChecks = ['1차 선택과 2차 선택이 반영되어 있다', '돌발상황이 반영되어 있다', '표현이 실제 현장 언어에 가깝다', '실행하기 어렵거나 모호한 부분이 있다', '민감정보나 컴플라이언스 위험이 있다'];
+
+export function toggle(list: string[], item: string) {
+  return list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
+}
+
+export function toggleMax(list: string[], item: string, max: number) {
+  if (list.includes(item)) return list.filter((x) => x !== item);
+  return list.length >= max ? list : [...list, item];
+}
 
 export function outputTitles(ids: string[]) {
   return ids.map((id) => outputs.find((o) => o.id === id)?.title).filter(Boolean).join(' / ');
