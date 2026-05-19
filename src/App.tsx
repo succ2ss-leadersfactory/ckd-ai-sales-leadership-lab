@@ -62,7 +62,7 @@ function EntryScreen({ participant, setParticipant, onEnter, error, status }: { 
   );
 }
 
-function HomeScreen({ participant, onStart, onDashboard }: { participant: Participant; onStart: () => void; onDashboard: () => void }) {
+function HomeScreen({ participant, onStart, onContinueLite, onDashboard, canContinueLite }: { participant: Participant; onStart: () => void; onContinueLite: () => void; onDashboard: () => void; canContinueLite: boolean }) {
   return (
     <>
       <Header title={`${participant.name || '참여자'}님, 오늘의 여정입니다`} subtitle="M2-5 Full Lab v2와 Lite Lab 저장 흐름이 연결되었습니다." />
@@ -70,7 +70,10 @@ function HomeScreen({ participant, onStart, onDashboard }: { participant: Partic
         <Card>
           <h2 className="font-bold">M2 성과관리</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">성과 개선 면담 Full Lab v2를 진행한 뒤 Lite Lab으로 이어집니다.</p>
-          <div className="mt-4"><Button onClick={onStart}>M2 Full/Lite 선택하기</Button></div>
+          <div className="mt-4 space-y-2">
+            <Button onClick={onStart}>M2 Full/Lite 선택하기</Button>
+            {canContinueLite && <Button variant="secondary" onClick={onContinueLite}>진행 중 Lite Lab 이어하기</Button>}
+          </div>
         </Card>
         <Button variant="ghost" onClick={onDashboard}>강사용 대시보드</Button>
       </div>
@@ -109,8 +112,9 @@ function SelectScreen({ selectedFull, selectedLite, setSelectedFull, setSelected
 export default function App() {
   const [step, setStep] = useState<Step>('entry');
   const [participant, setParticipant] = useState<Participant>(() => getStored('p', { participantId: '', name: '', groupName: '', sessionCode: 'JKD-2026-01', courseId }));
-  const [selectedFull, setSelectedFull] = useState('M2-5');
-  const [selectedLite, setSelectedLite] = useState('M2-2');
+  const [selectedFull, setSelectedFull] = useState(() => localStorage.getItem('selectedFull') || 'M2-5');
+  const [selectedLite, setSelectedLite] = useState(() => localStorage.getItem('selectedLite') || 'M2-2');
+  const [selectionSaved, setSelectionSaved] = useState(() => localStorage.getItem('selectionSaved') === 'true');
   const [status, setStatus] = useState<SaveStatus>('idle');
   const [error, setError] = useState('');
   const [dashboard, setDashboard] = useState<unknown>(null);
@@ -120,6 +124,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('p', JSON.stringify(participant));
   }, [participant]);
+
+  useEffect(() => {
+    localStorage.setItem('selectedFull', selectedFull);
+  }, [selectedFull]);
+
+  useEffect(() => {
+    localStorage.setItem('selectedLite', selectedLite);
+  }, [selectedLite]);
 
   async function saveParticipant() {
     setError('');
@@ -163,6 +175,8 @@ export default function App() {
     } catch {
       setStatus('failed');
     }
+    localStorage.setItem('selectionSaved', 'true');
+    setSelectionSaved(true);
     setStep('fullV2');
   }
 
@@ -190,7 +204,7 @@ export default function App() {
   return (
     <main className="mx-auto min-h-screen max-w-xl px-4 py-8 pb-28">
       {step === 'entry' && <EntryScreen participant={participant} setParticipant={setParticipant} onEnter={saveParticipant} error={error} status={status} />}
-      {step === 'home' && <HomeScreen participant={participant} onStart={() => setStep('select')} onDashboard={() => setStep('dashboard')} />}
+      {step === 'home' && <HomeScreen participant={participant} onStart={() => setStep('select')} onContinueLite={() => setStep('liteLab')} onDashboard={() => setStep('dashboard')} canContinueLite={selectionSaved && Boolean(selectedLite)} />}
       {step === 'select' && <SelectScreen selectedFull={selectedFull} selectedLite={selectedLite} setSelectedFull={setSelectedFull} setSelectedLite={setSelectedLite} onSave={saveSelection} onHome={() => setStep('home')} />}
       {step === 'fullV2' && <FullLabV2 participant={participant} scenario={fullScenario} selectedLite={selectedLite} callAppsScript={callAppsScript} onBackToSelection={() => setStep('select')} onComplete={() => setStep('liteLab')} />}
       {step === 'liteLab' && <LiteLab participant={participant} scenario={liteScenario} selectedFull={selectedFull} callAppsScript={callAppsScript} onBackToHome={() => setStep('home')} onBackToSelection={() => setStep('select')} onComplete={() => setStep('home')} />}
