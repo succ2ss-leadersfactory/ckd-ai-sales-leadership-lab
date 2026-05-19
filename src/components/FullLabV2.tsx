@@ -43,9 +43,8 @@ function createId(prefix: string) {
 }
 
 function getStoredDraft(scenarioId: string): Draft {
-  const key = `full_v2_${scenarioId}`;
   try {
-    const saved = localStorage.getItem(key);
+    const saved = localStorage.getItem(`full_v2_${scenarioId}`);
     return saved ? (JSON.parse(saved) as Draft) : emptyDraft;
   } catch {
     return emptyDraft;
@@ -73,6 +72,7 @@ export function FullLabV2({ participant, scenario, selectedLite, callAppsScript,
 
   async function saveFullLab() {
     setStatus('saving');
+    const promptText = buildPrompt(scenario, draft);
     const outputTitle = outputTitles(draft.outputIds) || scenario.outputTitle;
 
     try {
@@ -91,7 +91,7 @@ export function FullLabV2({ participant, scenario, selectedLite, callAppsScript,
         outputTitle,
         coreIssue: scenario.dilemma,
         firstDecision: `${draft.firstChoice} / ${draft.reason}`,
-        promptText: draft.prompt,
+        promptText,
         aiAnswer: draft.aiAnswer,
         revisionChecks: draft.aiChecks,
         revisionNotes: draft.aiNotes,
@@ -153,8 +153,7 @@ export function FullLabV2({ participant, scenario, selectedLite, callAppsScript,
       return;
     }
 
-    const nextStep = flowSteps[Math.min(flowIndex + 1, flowSteps.length - 1)];
-    setFlow(nextStep);
+    setFlow(flowSteps[Math.min(flowIndex + 1, flowSteps.length - 1)]);
   }
 
   function goPrevious() {
@@ -217,9 +216,9 @@ function ChoiceStep({ draft, setDraft }: { draft: Draft; setDraft: (draft: Draft
 function ReasonStep({ draft, updateDraft }: { draft: Draft; updateDraft: (next: Partial<Draft>) => void }) {
   const option = draft.firstChoice === 'A' ? dilemma.A : dilemma.B;
   return <>
-    <TextArea label="선택한 이유" value={draft.reason} onChange={(value) => updateDraft({ reason: value })} placeholder="이 선택을 한 이유를 한 줄 이상 적어 주세요." />
-    <Card><b>이 선택을 통한 기회</b><div className="mt-3 space-y-2">{option.opp.map((item) => <Select key={item} title={item} selected={draft.opportunities.includes(item)} onClick={() => updateDraft({ opportunities: toggle(draft.opportunities, item) })} />)}</div></Card>
-    <Card><b>이 선택의 위험</b><div className="mt-3 space-y-2">{option.risk.map((item) => <Select key={item} title={item} selected={draft.risks.includes(item)} onClick={() => updateDraft({ risks: toggle(draft.risks, item) })} />)}</div></Card>
+    <TextArea label="선택한 이유" value={draft.reason} onChange={(value) => updateDraft({ reason: value, prompt: '', promptChecks: [] })} placeholder="이 선택을 한 이유를 한 줄 이상 적어 주세요." />
+    <Card><b>이 선택을 통한 기회</b><div className="mt-3 space-y-2">{option.opp.map((item) => <Select key={item} title={item} selected={draft.opportunities.includes(item)} onClick={() => updateDraft({ opportunities: toggle(draft.opportunities, item), prompt: '', promptChecks: [] })} />)}</div></Card>
+    <Card><b>이 선택의 위험</b><div className="mt-3 space-y-2">{option.risk.map((item) => <Select key={item} title={item} selected={draft.risks.includes(item)} onClick={() => updateDraft({ risks: toggle(draft.risks, item), prompt: '', promptChecks: [] })} />)}</div></Card>
   </>;
 }
 
@@ -229,34 +228,38 @@ function SurpriseStep() {
 
 function SecondChoiceStep({ draft, updateDraft }: { draft: Draft; updateDraft: (next: Partial<Draft>) => void }) {
   return <>
-    <Select title="처음 선택을 유지한다" selected={draft.second === 'maintain'} onClick={() => updateDraft({ second: 'maintain' })} />
-    <Select title="일부 보완한다" selected={draft.second === 'adjust'} onClick={() => updateDraft({ second: 'adjust' })} />
-    <Select title="다른 방향으로 전환한다" selected={draft.second === 'switch'} onClick={() => updateDraft({ second: 'switch' })} />
-    <TextArea label="그 이유와 수정 방향" value={draft.secondReason} onChange={(value) => updateDraft({ secondReason: value })} />
+    <Select title="처음 선택을 유지한다" selected={draft.second === 'maintain'} onClick={() => updateDraft({ second: 'maintain', prompt: '', promptChecks: [] })} />
+    <Select title="일부 보완한다" selected={draft.second === 'adjust'} onClick={() => updateDraft({ second: 'adjust', prompt: '', promptChecks: [] })} />
+    <Select title="다른 방향으로 전환한다" selected={draft.second === 'switch'} onClick={() => updateDraft({ second: 'switch', prompt: '', promptChecks: [] })} />
+    <TextArea label="그 이유와 수정 방향" value={draft.secondReason} onChange={(value) => updateDraft({ secondReason: value, prompt: '', promptChecks: [] })} />
   </>;
 }
 
 function OutputStep({ draft, updateDraft }: { draft: Draft; updateDraft: (next: Partial<Draft>) => void }) {
   return <>
-    <Card className="bg-slate-50"><p className="text-sm">AI 산출물은 최대 2개까지 선택할 수 있습니다.</p></Card>
-    {outputs.map((output) => <Select key={output.id} title={output.title} desc={output.desc} selected={draft.outputIds.includes(output.id)} onClick={() => updateDraft({ outputIds: toggleMax(draft.outputIds, output.id, 2) })} />)}
+    <Card className="bg-slate-50"><p className="text-sm">AI 산출물은 최대 2개까지 선택할 수 있습니다. 수정하면 다음 단계의 프롬프트도 새 산출물 기준으로 다시 생성됩니다.</p></Card>
+    {outputs.map((output) => {
+      const nextOutputIds = toggleMax(draft.outputIds, output.id, 2);
+      return <Select key={output.id} title={output.title} desc={output.desc} selected={draft.outputIds.includes(output.id)} onClick={() => updateDraft({ outputIds: nextOutputIds, prompt: '', promptChecks: [] })} />;
+    })}
   </>;
 }
 
 function PromptStep({ scenario, draft, updateDraft }: { scenario: Scenario; draft: Draft; updateDraft: (next: Partial<Draft>) => void }) {
-  const prompt = draft.prompt || buildPrompt(scenario, draft);
+  const generatedPrompt = buildPrompt(scenario, draft);
   return <>
-    <Card><p className="text-sm leading-6">1차·2차 판단과 돌발상황을 반영해 AI 프롬프트를 생성합니다.</p></Card>
-    <Button onClick={() => updateDraft({ prompt })}>프롬프트 생성</Button>
-    <Card><pre className="max-h-72 overflow-auto whitespace-pre-wrap text-xs leading-5">{prompt}</pre></Card>
+    <Card><p className="text-sm leading-6">현재 선택한 산출물과 판단 내용을 기준으로 프롬프트를 생성합니다. 이전 단계에서 산출물을 바꾸면 이 내용도 함께 바뀝니다.</p></Card>
+    <Button onClick={() => updateDraft({ prompt: generatedPrompt })}>프롬프트 생성</Button>
+    <Card><pre className="max-h-72 overflow-auto whitespace-pre-wrap text-xs leading-5">{generatedPrompt}</pre></Card>
   </>;
 }
 
 function PromptReviewStep({ scenario, draft, updateDraft }: { scenario: Scenario; draft: Draft; updateDraft: (next: Partial<Draft>) => void }) {
-  const prompt = draft.prompt || buildPrompt(scenario, draft);
+  const generatedPrompt = buildPrompt(scenario, draft);
   return <>
     <Card><div className="space-y-2">{promptChecks.map((item) => <Select key={item} title={item} selected={draft.promptChecks.includes(item)} onClick={() => updateDraft({ promptChecks: toggle(draft.promptChecks, item) })} />)}</div></Card>
-    <Button onClick={async () => { updateDraft({ prompt }); try { await navigator.clipboard.writeText(prompt); } catch { /* ignore */ } }}>프롬프트 복사</Button>
+    <Card><pre className="max-h-56 overflow-auto whitespace-pre-wrap text-xs leading-5">{generatedPrompt}</pre></Card>
+    <Button onClick={async () => { updateDraft({ prompt: generatedPrompt }); try { await navigator.clipboard.writeText(generatedPrompt); } catch { /* ignore */ } }}>현재 프롬프트 복사</Button>
   </>;
 }
 
