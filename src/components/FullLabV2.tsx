@@ -125,8 +125,6 @@ export function FullLabV2({ participant, scenario, selectedLite, callAppsScript,
     localStorage.setItem(`full_v2_pending_${scenario.id}`, JSON.stringify(payload));
 
     try {
-      // 저장 속도 개선: 최종 결과는 Responses에 1회 저장합니다.
-      // ModuleProgress는 대시보드에서 Responses의 full 응답을 기준으로도 집계됩니다.
       await callAppsScript('saveResponse', payload);
       localStorage.removeItem(`full_v2_pending_${scenario.id}`);
       setStatus('saved');
@@ -188,7 +186,7 @@ export function FullLabV2({ participant, scenario, selectedLite, callAppsScript,
 
       <div className="sticky bottom-0 -mx-4 mt-6 flex gap-2 bg-white p-4">
         <Button variant="secondary" onClick={goPrevious}>{flow === 'scenario' ? 'Lab 선택' : '이전'}</Button>
-        {flow === 'saved' ? <Button onClick={onComplete}>모듈 홈</Button> : <Button onClick={goNext}>{flow === 'final' ? '저장' : '다음'}</Button>}
+        {flow === 'saved' ? <Button onClick={onComplete}>다음: Lite Lab</Button> : <Button onClick={goNext}>{flow === 'final' ? '저장' : '다음'}</Button>}
       </div>
     </main>
   );
