@@ -43,10 +43,7 @@ function createId(prefix: string) {
 }
 
 function normalizeDraft(draft: Draft): Draft {
-  return {
-    ...draft,
-    checkDate: draft.checkDate === '다음 주 금요일 오전' ? '' : draft.checkDate,
-  };
+  return { ...draft, checkDate: draft.checkDate === '다음 주 금요일 오전' ? '' : draft.checkDate };
 }
 
 function getStoredDraft(scenarioId: string): Draft {
@@ -77,73 +74,66 @@ export function FullLabV2({ participant, scenario, selectedLite, callAppsScript,
     setDraft((prev) => normalizeDraft({ ...prev, ...next }));
   }
 
-  async function saveFullLab() {
-    setStatus('saving');
+  function makeSavePayload() {
     const promptText = buildPrompt(scenario, draft);
     const outputTitle = outputTitles(draft.outputIds) || scenario.outputTitle;
+    return {
+      responseId: createId('R'),
+      participantId: participant.participantId,
+      sessionCode: participant.sessionCode,
+      courseId: participant.courseId,
+      name: participant.name,
+      groupName: participant.groupName,
+      moduleId: 'M2',
+      moduleTitle: '성과관리',
+      scenarioId: scenario.id,
+      scenarioTitle: scenario.title,
+      labType: 'full',
+      outputTitle,
+      coreIssue: scenario.dilemma,
+      firstDecision: `${draft.firstChoice} / ${draft.reason}`,
+      promptText,
+      aiAnswer: draft.aiAnswer,
+      revisionChecks: draft.aiChecks,
+      revisionNotes: draft.aiNotes,
+      finalOutput: draft.finalPlan,
+      actionText: draft.finalPlan,
+      checkDate: draft.checkDate,
+      dilemmaOptionA: dilemma.A.title,
+      dilemmaOptionB: dilemma.B.title,
+      firstChoice: draft.firstChoice,
+      firstChoiceReason: draft.reason,
+      firstChoiceOpportunity: draft.opportunities.join('; '),
+      firstChoiceRisk: draft.risks.join('; '),
+      surpriseVariables: surprises.map((item) => `${item.title}: ${item.desc}`).join('\n'),
+      secondChoiceType: draft.second,
+      secondChoiceReason: draft.secondReason,
+      selectedOutputType: outputTitle,
+      selectedTemplateId: draft.outputIds.join('; '),
+      promptReviewChecks: draft.promptChecks.join('; '),
+      aiReviewChecks: draft.aiChecks.join('; '),
+      aiRevisionNotes: draft.aiNotes,
+      finalActionPlan: draft.finalPlan,
+      saveStatus: 'saved',
+    };
+  }
+
+  async function saveFullLab() {
+    setError('');
+    setStatus('saving');
+    const payload = makeSavePayload();
+    localStorage.setItem(`full_v2_pending_${scenario.id}`, JSON.stringify(payload));
 
     try {
-      await callAppsScript('saveResponse', {
-        responseId: createId('R'),
-        participantId: participant.participantId,
-        sessionCode: participant.sessionCode,
-        courseId: participant.courseId,
-        name: participant.name,
-        groupName: participant.groupName,
-        moduleId: 'M2',
-        moduleTitle: '성과관리',
-        scenarioId: scenario.id,
-        scenarioTitle: scenario.title,
-        labType: 'full',
-        outputTitle,
-        coreIssue: scenario.dilemma,
-        firstDecision: `${draft.firstChoice} / ${draft.reason}`,
-        promptText,
-        aiAnswer: draft.aiAnswer,
-        revisionChecks: draft.aiChecks,
-        revisionNotes: draft.aiNotes,
-        finalOutput: draft.finalPlan,
-        actionText: draft.finalPlan,
-        checkDate: draft.checkDate,
-        dilemmaOptionA: dilemma.A.title,
-        dilemmaOptionB: dilemma.B.title,
-        firstChoice: draft.firstChoice,
-        firstChoiceReason: draft.reason,
-        firstChoiceOpportunity: draft.opportunities.join('; '),
-        firstChoiceRisk: draft.risks.join('; '),
-        surpriseVariables: surprises.map((item) => `${item.title}: ${item.desc}`).join('\n'),
-        secondChoiceType: draft.second,
-        secondChoiceReason: draft.secondReason,
-        selectedOutputType: outputTitle,
-        selectedTemplateId: draft.outputIds.join('; '),
-        promptReviewChecks: draft.promptChecks.join('; '),
-        aiReviewChecks: draft.aiChecks.join('; '),
-        aiRevisionNotes: draft.aiNotes,
-        finalActionPlan: draft.finalPlan,
-      });
-
-      await callAppsScript('saveProgress', {
-        participantId: participant.participantId,
-        sessionCode: participant.sessionCode,
-        courseId: participant.courseId,
-        moduleId: 'M2',
-        moduleTitle: '성과관리',
-        status: 'in_progress',
-        selectedFullScenarioId: scenario.id,
-        selectedLiteScenarioIds: [selectedLite],
-        completedFullCount: 1,
-        completedLiteCount: 0,
-        requiredFullCount: 1,
-        requiredLiteCount: 1,
-        lastLabType: 'full',
-        lastStep: 'FullV2-saved',
-      });
-
+      // 저장 속도 개선: 최종 결과는 Responses에 1회 저장합니다.
+      // ModuleProgress는 대시보드에서 Responses의 full 응답을 기준으로도 집계됩니다.
+      await callAppsScript('saveResponse', payload);
+      localStorage.removeItem(`full_v2_pending_${scenario.id}`);
       setStatus('saved');
       setFlow('saved');
     } catch {
       setStatus('failed');
-      setError('저장이 지연되고 있습니다. 입력하신 내용은 이 기기에 유지됩니다.');
+      setError('저장이 지연되고 있습니다. 입력하신 내용은 이 기기에 유지됩니다. 잠시 후 다시 저장해 주세요.');
     }
   }
 
@@ -153,15 +143,12 @@ export function FullLabV2({ participant, scenario, selectedLite, callAppsScript,
       setError(validation);
       return;
     }
-
     setError('');
     if (flow === 'final') {
       void saveFullLab();
       return;
     }
-
-    const nextStep = flowSteps[Math.min(flowIndex + 1, flowSteps.length - 1)];
-    setFlow(nextStep);
+    setFlow(flowSteps[Math.min(flowIndex + 1, flowSteps.length - 1)]);
   }
 
   function goPrevious() {
@@ -196,6 +183,7 @@ export function FullLabV2({ participant, scenario, selectedLite, callAppsScript,
 
         {error && <div className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}
         <Save status={status} />
+        {status === 'failed' && flow === 'final' && <Button variant="secondary" onClick={() => void saveFullLab()}>다시 저장하기</Button>}
       </div>
 
       <div className="sticky bottom-0 -mx-4 mt-6 flex gap-2 bg-white p-4">
@@ -283,17 +271,7 @@ function ExampleCard({ selectedOutputs }: { selectedOutputs: AiOutput[] }) {
   const hasFollowup = selectedOutputs.some((output) => output.id === 'followup');
   const hasAgreement = selectedOutputs.some((output) => output.id === 'agreement');
   const hasQuestions = selectedOutputs.some((output) => output.id === 'questions');
-
-  return <Card className="bg-slate-50">
-    <b>작성 예시</b>
-    <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
-      {hasDialogue && <p>첫 문장: 오늘은 실적을 지적하려는 자리가 아니라, 최근 활동 중 어디에서 막히는지 함께 확인하려고 합니다.</p>}
-      {hasQuestions && <p>확인 질문: 최근 고객 대화에서 가장 반응이 달라진 부분은 무엇이었나요?</p>}
-      {hasAgreement && <p>합의 행동: 이번 주에는 핵심 고객 3곳의 후속 대화 내용을 함께 점검하겠습니다.</p>}
-      {hasFollowup && <p>Follow-up 메시지: 오늘 이야기한 내용을 바탕으로 이번 주 실행 행동을 함께 확인해 보겠습니다.</p>}
-      {!hasDialogue && !hasQuestions && !hasAgreement && !hasFollowup && <p>예시: 상황에 맞는 첫 문장, 확인 질문, 합의 행동, 다음 확인 시점을 간단히 정리해 주세요.</p>}
-    </div>
-  </Card>;
+  return <Card className="bg-slate-50"><b>작성 예시</b><div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">{hasDialogue && <p>첫 문장: 오늘은 실적을 지적하려는 자리가 아니라, 최근 활동 중 어디에서 막히는지 함께 확인하려고 합니다.</p>}{hasQuestions && <p>확인 질문: 최근 고객 대화에서 가장 반응이 달라진 부분은 무엇이었나요?</p>}{hasAgreement && <p>합의 행동: 이번 주에는 핵심 고객 3곳의 후속 대화 내용을 함께 점검하겠습니다.</p>}{hasFollowup && <p>Follow-up 메시지: 오늘 이야기한 내용을 바탕으로 이번 주 실행 행동을 함께 확인해 보겠습니다.</p>}</div></Card>;
 }
 
 function FinalStep({ draft, updateDraft, selectedOutputs }: { draft: Draft; updateDraft: (next: Partial<Draft>) => void; selectedOutputs: AiOutput[] }) {
