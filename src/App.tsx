@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Header, Save } from './components/common';
 import { FullLabV2 } from './components/FullLabV2';
+import { LiteLab } from './components/LiteLab';
 import { scenarios, type Scenario, type SaveStatus } from './data/m2Data';
 
-type Step = 'entry' | 'home' | 'select' | 'fullV2' | 'dashboard';
+type Step = 'entry' | 'home' | 'select' | 'fullV2' | 'liteLab' | 'dashboard';
 
 type Participant = {
   participantId: string;
@@ -64,11 +65,11 @@ function EntryScreen({ participant, setParticipant, onEnter, error, status }: { 
 function HomeScreen({ participant, onStart, onDashboard }: { participant: Participant; onStart: () => void; onDashboard: () => void }) {
   return (
     <>
-      <Header title={`${participant.name || '참여자'}님, 오늘의 여정입니다`} subtitle="M2-5 Full Lab v2 12단계가 안정화되었습니다." />
+      <Header title={`${participant.name || '참여자'}님, 오늘의 여정입니다`} subtitle="M2-5 Full Lab v2와 Lite Lab 저장 흐름이 연결되었습니다." />
       <div className="space-y-3">
         <Card>
           <h2 className="font-bold">M2 성과관리</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">성과 개선 면담 Full Lab v2를 진행합니다.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">성과 개선 면담 Full Lab v2를 진행한 뒤 Lite Lab으로 이어집니다.</p>
           <div className="mt-4"><Button onClick={onStart}>M2 Full/Lite 선택하기</Button></div>
         </Card>
         <Button variant="ghost" onClick={onDashboard}>강사용 대시보드</Button>
@@ -113,7 +114,8 @@ export default function App() {
   const [status, setStatus] = useState<SaveStatus>('idle');
   const [error, setError] = useState('');
   const [dashboard, setDashboard] = useState<unknown>(null);
-  const scenario: Scenario = scenarios.find((item) => item.id === selectedFull) || scenarios[2];
+  const fullScenario: Scenario = scenarios.find((item) => item.id === selectedFull) || scenarios[2];
+  const liteScenario: Scenario = scenarios.find((item) => item.id === selectedLite) || scenarios[1];
 
   useEffect(() => {
     localStorage.setItem('p', JSON.stringify(participant));
@@ -190,7 +192,8 @@ export default function App() {
       {step === 'entry' && <EntryScreen participant={participant} setParticipant={setParticipant} onEnter={saveParticipant} error={error} status={status} />}
       {step === 'home' && <HomeScreen participant={participant} onStart={() => setStep('select')} onDashboard={() => setStep('dashboard')} />}
       {step === 'select' && <SelectScreen selectedFull={selectedFull} selectedLite={selectedLite} setSelectedFull={setSelectedFull} setSelectedLite={setSelectedLite} onSave={saveSelection} onHome={() => setStep('home')} />}
-      {step === 'fullV2' && <FullLabV2 participant={participant} scenario={scenario} selectedLite={selectedLite} callAppsScript={callAppsScript} onBackToSelection={() => setStep('select')} onComplete={() => setStep('home')} />}
+      {step === 'fullV2' && <FullLabV2 participant={participant} scenario={fullScenario} selectedLite={selectedLite} callAppsScript={callAppsScript} onBackToSelection={() => setStep('select')} onComplete={() => setStep('liteLab')} />}
+      {step === 'liteLab' && <LiteLab participant={participant} scenario={liteScenario} selectedFull={selectedFull} callAppsScript={callAppsScript} onBackToHome={() => setStep('home')} onBackToSelection={() => setStep('select')} onComplete={() => setStep('home')} />}
     </main>
   );
 }
