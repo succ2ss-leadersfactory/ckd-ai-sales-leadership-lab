@@ -2,17 +2,24 @@ import { useEffect, useState } from 'react';
 import { Button, Card, Header, Save } from './components/common';
 import { FullLabV2 } from './components/FullLabV2';
 import { LiteLab } from './components/LiteLab';
-import { scenarios, type Scenario, type SaveStatus } from './data/m2Data';
+import {
+  fixedFullScenarioId,
+  recommendedLiteScenarioIds,
+  requiredLiteCount,
+  scenarios,
+  type Scenario,
+  type SaveStatus,
+} from './data/m2Data';
 
 type Step = 'entry' | 'home' | 'select' | 'fullV2' | 'liteLab' | 'dashboard';
 
-type Participant = {
+interface Participant {
   participantId: string;
   name: string;
   groupName: string;
   sessionCode: string;
   courseId: string;
-};
+}
 
 const API_URL = import.meta.env.VITE_GOOGLE_SCRIPT_WEBAPP_URL as string | undefined;
 const courseId = 'jongkundang-sales-ai-lab';
@@ -28,6 +35,12 @@ function getStored<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function toggleLiteSelection(list: string[], id: string) {
+  if (list.includes(id)) return list.filter((item) => item !== id);
+  if (list.length >= requiredLiteCount) return list;
+  return [...list, id];
 }
 
 async function callAppsScript(action: string, payload: unknown) {
@@ -65,13 +78,13 @@ function EntryScreen({ participant, setParticipant, onEnter, error, status }: { 
 function HomeScreen({ participant, onStart, onContinueLite, onDashboard, canContinueLite }: { participant: Participant; onStart: () => void; onContinueLite: () => void; onDashboard: () => void; canContinueLite: boolean }) {
   return (
     <>
-      <Header title={`${participant.name || '참여자'}님, 오늘의 여정입니다`} subtitle="M2-5 Full Lab v2와 Lite Lab 저장 흐름이 연결되었습니다." />
+      <Header title={`${participant.name || '참여자'}님, 오늘의 여정입니다`} subtitle="고정 Full Lab 1개와 선택 Lite Lab 2개로 진행합니다." />
       <div className="space-y-3">
         <Card>
           <h2 className="font-bold">M2 성과관리</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">성과 개선 면담 Full Lab v2를 진행한 뒤 Lite Lab으로 이어집니다.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">공통 핵심 상황은 Full Lab으로 깊게 다루고, 나머지 상황 중 2개를 Lite Lab으로 선택합니다.</p>
           <div className="mt-4 space-y-2">
-            <Button onClick={onStart}>M2 Full/Lite 선택하기</Button>
+            <Button onClick={onStart}>M2 Lab 시작하기</Button>
             {canContinueLite && <Button variant="secondary" onClick={onContinueLite}>진행 중 Lite Lab 이어하기</Button>}
           </div>
         </Card>
@@ -81,29 +94,56 @@ function HomeScreen({ participant, onStart, onContinueLite, onDashboard, canCont
   );
 }
 
-function SelectScreen({ selectedFull, selectedLite, setSelectedFull, setSelectedLite, onSave, onHome }: { selectedFull: string; selectedLite: string; setSelectedFull: (value: string) => void; setSelectedLite: (value: string) => void; onSave: () => void; onHome: () => void }) {
+function SelectScreen({ selectedLiteIds, setSelectedLiteIds, onSave, onHome, error }: { selectedLiteIds: string[]; setSelectedLiteIds: (value: string[]) => void; onSave: () => void; onHome: () => void; error: string }) {
+  const fixedFull = scenarios.find((scenario) => scenario.id === fixedFullScenarioId) || scenarios[0];
+  const liteCandidates = scenarios.filter((scenario) => scenario.id !== fixedFullScenarioId);
+
   return (
     <>
-      <Header step="M2 Lab 선택" title="성과관리 상황 선택" subtitle="Full Lab과 Lite Lab을 선택합니다." />
-      <div className="space-y-3">
-        {scenarios.map((scenario) => (
-          <Card key={scenario.id} className={selectedFull === scenario.id || selectedLite === scenario.id ? 'ring-1 ring-slate-900' : ''}>
-            <div className="mb-2 flex gap-2 text-xs font-bold">
-              {scenario.recommendedFull && <span className="rounded-full bg-slate-900 px-2 py-1 text-white">추천 Full</span>}
-              {scenario.recommendedLite && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">추천 Lite</span>}
-            </div>
-            <h2 className="font-bold">{scenario.title}</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{scenario.summary}</p>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <Button variant={selectedFull === scenario.id ? 'primary' : 'secondary'} onClick={() => { setSelectedFull(scenario.id); if (selectedLite === scenario.id) setSelectedLite(''); }}>Full</Button>
-              <Button variant={selectedLite === scenario.id ? 'primary' : 'secondary'} onClick={() => { if (selectedFull !== scenario.id) setSelectedLite(scenario.id); }}>Lite</Button>
-            </div>
-          </Card>
-        ))}
+      <Header step="M2 Lab 선택" title="성과관리 상황 선택" subtitle="Full Lab은 공통 핵심 상황으로 고정하고, Lite Lab 2개를 선택합니다." />
+
+      <Card className="mb-4 bg-slate-50">
+        <div className="mb-2 inline-flex rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">고정 Full Lab</div>
+        <h2 className="font-bold">{fixedFull.title}</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{fixedFull.summary}</p>
+        <p className="mt-3 rounded-2xl bg-white p-3 text-sm leading-6 text-slate-700">모든 참여자가 이 상황을 Full Lab으로 깊게 실습합니다.</p>
+      </Card>
+
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        <Button variant="secondary" onClick={() => setSelectedLiteIds(recommendedLiteScenarioIds.slice(0, requiredLiteCount))}>추천 Lite 2개 선택</Button>
+        <Button variant="ghost" onClick={() => setSelectedLiteIds([])}>선택 초기화</Button>
       </div>
+
+      <Card className="mb-4">
+        <div className="text-sm font-bold text-slate-800">Lite Lab 선택 현황</div>
+        <div className="mt-2 text-sm leading-6 text-slate-700">{selectedLiteIds.length}/{requiredLiteCount}개 선택됨</div>
+        <div className="text-sm leading-6 text-slate-700">{selectedLiteIds.join(', ') || '아직 선택하지 않았습니다.'}</div>
+      </Card>
+
+      <div className="space-y-3">
+        {liteCandidates.map((scenario) => {
+          const selected = selectedLiteIds.includes(scenario.id);
+          return (
+            <Card key={scenario.id} className={selected ? 'ring-1 ring-slate-900' : ''}>
+              <div className="mb-2 flex gap-2 text-xs font-bold">
+                {scenario.recommendedLite && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">추천 Lite</span>}
+                {selected && <span className="rounded-full bg-slate-900 px-2 py-1 text-white">Lite 선택됨</span>}
+              </div>
+              <h2 className="font-bold">{scenario.title}</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{scenario.summary}</p>
+              <div className="mt-3">
+                <Button variant={selected ? 'primary' : 'secondary'} onClick={() => setSelectedLiteIds(toggleLiteSelection(selectedLiteIds, scenario.id))}>{selected ? 'Lite 선택 해제' : 'Lite로 선택'}</Button>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      {error && <div className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
       <div className="sticky bottom-0 -mx-4 mt-6 flex gap-2 bg-white p-4">
         <Button variant="secondary" onClick={onHome}>홈</Button>
-        <Button disabled={!selectedFull || !selectedLite} onClick={onSave}>선택 저장 후 Full Lab 시작</Button>
+        <Button disabled={selectedLiteIds.length !== requiredLiteCount} onClick={onSave}>선택 저장 후 Full Lab 시작</Button>
       </div>
     </>
   );
@@ -112,26 +152,22 @@ function SelectScreen({ selectedFull, selectedLite, setSelectedFull, setSelected
 export default function App() {
   const [step, setStep] = useState<Step>('entry');
   const [participant, setParticipant] = useState<Participant>(() => getStored('p', { participantId: '', name: '', groupName: '', sessionCode: 'JKD-2026-01', courseId }));
-  const [selectedFull, setSelectedFull] = useState(() => localStorage.getItem('selectedFull') || 'M2-5');
-  const [selectedLite, setSelectedLite] = useState(() => localStorage.getItem('selectedLite') || 'M2-2');
+  const [selectedLiteIds, setSelectedLiteIds] = useState<string[]>(() => getStored('selectedLiteIds', recommendedLiteScenarioIds.slice(0, requiredLiteCount)));
+  const [liteIndex, setLiteIndex] = useState(0);
   const [selectionSaved, setSelectionSaved] = useState(() => localStorage.getItem('selectionSaved') === 'true');
   const [status, setStatus] = useState<SaveStatus>('idle');
   const [error, setError] = useState('');
   const [dashboard, setDashboard] = useState<unknown>(null);
-  const fullScenario: Scenario = scenarios.find((item) => item.id === selectedFull) || scenarios[2];
-  const liteScenario: Scenario = scenarios.find((item) => item.id === selectedLite) || scenarios[1];
+  const fullScenario: Scenario = scenarios.find((item) => item.id === fixedFullScenarioId) || scenarios[2];
+  const liteScenario: Scenario = scenarios.find((item) => item.id === selectedLiteIds[liteIndex]) || scenarios[1];
 
   useEffect(() => {
     localStorage.setItem('p', JSON.stringify(participant));
   }, [participant]);
 
   useEffect(() => {
-    localStorage.setItem('selectedFull', selectedFull);
-  }, [selectedFull]);
-
-  useEffect(() => {
-    localStorage.setItem('selectedLite', selectedLite);
-  }, [selectedLite]);
+    localStorage.setItem('selectedLiteIds', JSON.stringify(selectedLiteIds));
+  }, [selectedLiteIds]);
 
   async function saveParticipant() {
     setError('');
@@ -155,6 +191,12 @@ export default function App() {
   }
 
   async function saveSelection() {
+    setError('');
+    if (selectedLiteIds.length !== requiredLiteCount) {
+      setError(`Lite Lab을 ${requiredLiteCount}개 선택해 주세요.`);
+      return;
+    }
+
     setStatus('saving');
     try {
       await callAppsScript('saveProgress', {
@@ -164,19 +206,21 @@ export default function App() {
         moduleId: 'M2',
         moduleTitle: '성과관리',
         status: 'in_progress',
-        selectedFullScenarioId: selectedFull,
-        selectedLiteScenarioIds: [selectedLite],
+        selectedFullScenarioId: fixedFullScenarioId,
+        selectedLiteScenarioIds: selectedLiteIds,
         completedFullCount: 0,
         completedLiteCount: 0,
         requiredFullCount: 1,
-        requiredLiteCount: 1,
+        requiredLiteCount,
       });
       setStatus('saved');
     } catch {
       setStatus('failed');
     }
+
     localStorage.setItem('selectionSaved', 'true');
     setSelectionSaved(true);
+    setLiteIndex(0);
     setStep('fullV2');
   }
 
@@ -186,6 +230,20 @@ export default function App() {
     } catch (event) {
       setDashboard({ error: event instanceof Error ? event.message : '조회 오류' });
     }
+  }
+
+  function handleFullComplete() {
+    setLiteIndex(0);
+    setStep('liteLab');
+  }
+
+  function handleLiteComplete() {
+    if (liteIndex < selectedLiteIds.length - 1) {
+      setLiteIndex((prev) => prev + 1);
+      setStep('liteLab');
+      return;
+    }
+    setStep('home');
   }
 
   if (step === 'dashboard') {
@@ -204,10 +262,10 @@ export default function App() {
   return (
     <main className="mx-auto min-h-screen max-w-xl px-4 py-8 pb-28">
       {step === 'entry' && <EntryScreen participant={participant} setParticipant={setParticipant} onEnter={saveParticipant} error={error} status={status} />}
-      {step === 'home' && <HomeScreen participant={participant} onStart={() => setStep('select')} onContinueLite={() => setStep('liteLab')} onDashboard={() => setStep('dashboard')} canContinueLite={selectionSaved && Boolean(selectedLite)} />}
-      {step === 'select' && <SelectScreen selectedFull={selectedFull} selectedLite={selectedLite} setSelectedFull={setSelectedFull} setSelectedLite={setSelectedLite} onSave={saveSelection} onHome={() => setStep('home')} />}
-      {step === 'fullV2' && <FullLabV2 participant={participant} scenario={fullScenario} selectedLite={selectedLite} callAppsScript={callAppsScript} onBackToSelection={() => setStep('select')} onComplete={() => setStep('liteLab')} />}
-      {step === 'liteLab' && <LiteLab participant={participant} scenario={liteScenario} selectedFull={selectedFull} callAppsScript={callAppsScript} onBackToHome={() => setStep('home')} onBackToSelection={() => setStep('select')} onComplete={() => setStep('home')} />}
+      {step === 'home' && <HomeScreen participant={participant} onStart={() => setStep('select')} onContinueLite={() => setStep('liteLab')} onDashboard={() => setStep('dashboard')} canContinueLite={selectionSaved && selectedLiteIds.length > 0} />}
+      {step === 'select' && <SelectScreen selectedLiteIds={selectedLiteIds} setSelectedLiteIds={setSelectedLiteIds} onSave={saveSelection} onHome={() => setStep('home')} error={error} />}
+      {step === 'fullV2' && <FullLabV2 participant={participant} scenario={fullScenario} selectedLite={selectedLiteIds.join('; ')} callAppsScript={callAppsScript} onBackToSelection={() => setStep('select')} onComplete={handleFullComplete} />}
+      {step === 'liteLab' && <LiteLab participant={participant} scenario={liteScenario} selectedFull={fixedFullScenarioId} callAppsScript={callAppsScript} onBackToHome={() => setStep('home')} onBackToSelection={() => setStep('select')} onComplete={handleLiteComplete} />}
     </main>
   );
 }
