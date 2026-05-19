@@ -23,6 +23,7 @@ interface Participant {
 
 const API_URL = import.meta.env.VITE_GOOGLE_SCRIPT_WEBAPP_URL as string | undefined;
 const courseId = 'jongkundang-sales-ai-lab';
+const defaultParticipant: Participant = { participantId: '', name: '', groupName: '', sessionCode: 'JKD-2026-01', courseId };
 
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -35,6 +36,16 @@ function getStored<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function clearLabStorage() {
+  const prefixes = ['full_v2_', 'lite_lab_', 'lite_pending_', 'full_v2_pending_'];
+  const exactKeys = ['p', 'selectedLiteIds', 'selectionSaved', 'liteIndex', 'm25draft', 'ckd_participant', 'ckd_m1_answers', 'ckd_lab_selections'];
+
+  exactKeys.forEach((key) => localStorage.removeItem(key));
+  Object.keys(localStorage).forEach((key) => {
+    if (prefixes.some((prefix) => key.startsWith(prefix))) localStorage.removeItem(key);
+  });
 }
 
 function toggleLiteSelection(list: string[], id: string) {
@@ -73,7 +84,7 @@ function EntryScreen({ participant, setParticipant, onEnter, error, status }: { 
   );
 }
 
-function HomeScreen({ participant, onStart, onContinueLite, onDashboard, canContinueLite, liteProgressLabel }: { participant: Participant; onStart: () => void; onContinueLite: () => void; onDashboard: () => void; canContinueLite: boolean; liteProgressLabel: string }) {
+function HomeScreen({ participant, onStart, onContinueLite, onDashboard, onReset, canContinueLite, liteProgressLabel }: { participant: Participant; onStart: () => void; onContinueLite: () => void; onDashboard: () => void; onReset: () => void; canContinueLite: boolean; liteProgressLabel: string }) {
   return (
     <>
       <Header title={`${participant.name || '참여자'}님, 오늘의 여정입니다`} subtitle="고정 Full Lab 1개와 선택 Lite Lab 2개로 진행합니다." />
@@ -87,6 +98,10 @@ function HomeScreen({ participant, onStart, onContinueLite, onDashboard, canCont
           </div>
         </Card>
         <Button variant="ghost" onClick={onDashboard}>강사용 대시보드</Button>
+        <Card className="bg-slate-50">
+          <p className="mb-3 text-sm leading-6 text-slate-600">같은 기기에서 다른 참여자가 사용할 때는 이전 입력과 선택값을 지우고 새로 시작해 주세요.</p>
+          <Button variant="secondary" onClick={onReset}>새 참여자로 시작</Button>
+        </Card>
       </div>
     </>
   );
@@ -142,7 +157,7 @@ function SelectScreen({ selectedLiteIds, setSelectedLiteIds, onSave, onHome, err
 
 export default function App() {
   const [step, setStep] = useState<Step>('entry');
-  const [participant, setParticipant] = useState<Participant>(() => getStored('p', { participantId: '', name: '', groupName: '', sessionCode: 'JKD-2026-01', courseId }));
+  const [participant, setParticipant] = useState<Participant>(() => getStored('p', defaultParticipant));
   const [selectedLiteIds, setSelectedLiteIds] = useState<string[]>(() => getStored('selectedLiteIds', recommendedLiteScenarioIds.slice(0, requiredLiteCount)));
   const [liteIndex, setLiteIndex] = useState(() => Number(localStorage.getItem('liteIndex') || '0'));
   const [selectionSaved, setSelectionSaved] = useState(() => localStorage.getItem('selectionSaved') === 'true');
@@ -159,28 +174,33 @@ export default function App() {
   useEffect(() => { localStorage.setItem('selectedLiteIds', JSON.stringify(selectedLiteIds)); }, [selectedLiteIds]);
   useEffect(() => { localStorage.setItem('liteIndex', String(liteIndex)); }, [liteIndex]);
 
+  function resetParticipant() {
+    clearLabStorage();
+    setParticipant(defaultParticipant);
+    setSelectedLiteIds(recommendedLiteScenarioIds.slice(0, requiredLiteCount));
+    setLiteIndex(0);
+    setSelectionSaved(false);
+    setStatus('idle');
+    setError('');
+    setDashboard(null);
+    setStep('entry');
+  }
+
   async function saveParticipant() {
     setError('');
-    if (!participant.name.trim()) {
-      setError('이름을 입력해 주세요.');
-      return;
-    }
+    if (!participant.name.trim()) { setError('이름을 입력해 주세요.'); return; }
+    if (!participant.groupName.trim()) { setError('조/팀을 입력해 주세요.'); return; }
     const next = { ...participant, participantId: participant.participantId || createId('P'), courseId };
     setParticipant(next);
     setStatus('saving');
-    try {
-      await callAppsScript('saveParticipant', { ...next, role: 'learner', entryStatus: 'active' });
-      setStatus('saved');
-    } catch { setStatus('failed'); }
+    try { await callAppsScript('saveParticipant', { ...next, role: 'learner', entryStatus: 'active' }); setStatus('saved'); }
+    catch { setStatus('failed'); }
     setStep('home');
   }
 
   async function saveSelection() {
     setError('');
-    if (selectedLiteIds.length !== requiredLiteCount) {
-      setError(`Lite Lab을 ${requiredLiteCount}개 선택해 주세요.`);
-      return;
-    }
+    if (selectedLiteIds.length !== requiredLiteCount) { setError(`Lite Lab을 ${requiredLiteCount}개 선택해 주세요.`); return; }
     setStatus('saving');
     try {
       await callAppsScript('saveProgress', { participantId: participant.participantId, sessionCode: participant.sessionCode, courseId, moduleId: 'M2', moduleTitle: '성과관리', status: 'in_progress', selectedFullScenarioId: fixedFullScenarioId, selectedLiteScenarioIds: selectedLiteIds, completedFullCount: 0, completedLiteCount: 0, requiredFullCount: 1, requiredLiteCount });
@@ -199,11 +219,7 @@ export default function App() {
 
   function handleFullComplete() { setLiteIndex(0); setStep('liteLab'); }
   function handleLiteComplete() {
-    if (hasNextLite) {
-      setLiteIndex((prev) => prev + 1);
-      setStep('liteLab');
-      return;
-    }
+    if (hasNextLite) { setLiteIndex((prev) => prev + 1); setStep('liteLab'); return; }
     localStorage.removeItem('liteIndex');
     setStep('home');
   }
@@ -214,7 +230,7 @@ export default function App() {
 
   return <main className="mx-auto min-h-screen max-w-xl px-4 py-8 pb-28">
     {step === 'entry' && <EntryScreen participant={participant} setParticipant={setParticipant} onEnter={saveParticipant} error={error} status={status} />}
-    {step === 'home' && <HomeScreen participant={participant} onStart={() => setStep('select')} onContinueLite={() => setStep('liteLab')} onDashboard={() => setStep('dashboard')} canContinueLite={selectionSaved && selectedLiteIds.length > 0} liteProgressLabel={liteProgressLabel} />}
+    {step === 'home' && <HomeScreen participant={participant} onStart={() => setStep('select')} onContinueLite={() => setStep('liteLab')} onDashboard={() => setStep('dashboard')} onReset={resetParticipant} canContinueLite={selectionSaved && selectedLiteIds.length > 0} liteProgressLabel={liteProgressLabel} />}
     {step === 'select' && <SelectScreen selectedLiteIds={selectedLiteIds} setSelectedLiteIds={setSelectedLiteIds} onSave={saveSelection} onHome={() => setStep('home')} error={error} />}
     {step === 'fullV2' && <FullLabV2 participant={participant} scenario={fullScenario} selectedLite={selectedLiteIds.join('; ')} callAppsScript={callAppsScript} onBackToSelection={() => setStep('select')} onComplete={handleFullComplete} />}
     {step === 'liteLab' && <LiteLab key={liteScenario.id} participant={participant} scenario={liteScenario} selectedFull={fixedFullScenarioId} callAppsScript={callAppsScript} onBackToHome={() => setStep('home')} onBackToSelection={() => setStep('select')} onComplete={handleLiteComplete} hasNextLite={hasNextLite} />}
