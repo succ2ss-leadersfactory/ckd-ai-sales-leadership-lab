@@ -51,7 +51,7 @@ export const emptyDraft: Draft = {
   aiChecks: [],
   aiNotes: '',
   finalPlan: '',
-  checkDate: '다음 주 금요일 오전',
+  checkDate: '',
 };
 
 export const flowSteps: StepKey[] = ['scenario', 'choice', 'reason', 'surprise', 'second', 'output', 'prompt', 'promptReview', 'aiPaste', 'aiReview', 'final', 'saved'];
