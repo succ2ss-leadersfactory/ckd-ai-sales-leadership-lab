@@ -58,9 +58,15 @@ export const flowSteps: StepKey[] = ['scenario', 'choice', 'reason', 'surprise',
 export const flowLabels: Record<StepKey, string> = { scenario: '상황 읽기', choice: '딜레마 A/B 선택', reason: '선택 이유·기회·위험', surprise: '돌발상황 3개', second: '2차 선택', output: 'AI 산출물 선택', prompt: '프롬프트 생성', promptReview: '프롬프트 검토·복사', aiPaste: 'AI 결과 붙여넣기', aiReview: 'AI 결과 검토', final: '최종 실행계획', saved: '저장 완료' };
 export const warning = '고객명, 병원명, 의사명, 내부 전략, 민감한 수치, 승인되지 않은 제품 표현은 입력하지 마세요.';
 
+export const fixedFullScenarioId = 'M2-5';
+export const recommendedLiteScenarioIds = ['M2-2', 'M2-3'];
+export const requiredLiteCount = 2;
+
 export const scenarios: Scenario[] = [
   { id: 'M2-1', title: '목표는 올라갔는데 팀원들은 납득하지 못합니다', summary: '목표 상향에 대한 수용성과 실행 행동을 정리합니다.', situation: '본부에서 핵심 제품 목표를 상향 조정했습니다. 팀원들은 현장 상황과 맞지 않는다며 부담을 느낍니다.', dilemma: '목표 긴장감은 유지하면서도 팀원들이 납득할 수 있게 설명해야 합니다.', outputTitle: '팀 미팅 목표 설명 준비' },
   { id: 'M2-2', title: '활동은 많은데 성과로 연결되지 않습니다', summary: '활동량과 활동의 질을 구분합니다.', situation: '방문 건수와 기록은 충분하지만 성과 전환율은 낮습니다.', dilemma: '활동량을 더 늘릴지, 활동의 질을 점검할지 판단해야 합니다.', outputTitle: '이번 주 성과개선 계획', recommendedLite: true },
+  { id: 'M2-3', title: '같은 제품인데 담당자별 성과 차이가 큽니다', summary: '같은 제품을 담당하지만 팀원별 성과 차이가 큰 상황입니다.', situation: '같은 전략 제품을 담당하고 있는데 팀원별 성과 차이가 큽니다. 담당 고객군, 접근성, 기존 관계 수준이 서로 다릅니다.', dilemma: '개인 책임만 강조하면 불공정해 보이고, 환경 탓만 하면 개선 행동이 약해질 수 있습니다.', outputTitle: '팀원별 성과 차이 확인', recommendedLite: true },
+  { id: 'M2-4', title: '월말에 가서야 성과 위험이 보입니다', summary: '월말 전 성과위험 신호와 보완 행동을 정리합니다.', situation: '월초에는 큰 문제가 없어 보였지만 월말이 가까워지자 핵심 고객 방문 지연, 신규 처방 전환 지연, 후속 조치 누락이 한꺼번에 드러났습니다.', dilemma: '월말에 실적을 확인하는 방식으로는 늦습니다. 월중에 미리 봐야 할 신호가 필요합니다.', outputTitle: '월말 전 성과위험 확인' },
   { id: 'M2-5', title: '성과 개선 면담이 압박처럼 받아들여집니다', summary: '성과 문제와 팀원의 방어감을 함께 다루는 면담 상황입니다.', situation: '성과가 흔들리는 팀원과 면담하려 합니다. 팀원은 면담 일정만 잡혀도 “또 실적 이야기겠네요”라고 반응합니다.', dilemma: '성과 문제는 명확히 다루어야 하지만, 대화 방식이 압박처럼 들리면 팀원은 방어적으로 반응할 수 있습니다.', outputTitle: '성과 1:1 면담 준비', recommendedFull: true },
 ];
 
